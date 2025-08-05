@@ -29,6 +29,7 @@ import eu.europa.ec.eudi.wallet.document.DocumentId
 
 data class RequestedDocument(
     val documentId: DocumentId,
+    val format: String = "mdoc",
     val requestedItems: Map<out DocItem, IntentToRetain>,
     val readerAuth: ReaderAuth?
 )

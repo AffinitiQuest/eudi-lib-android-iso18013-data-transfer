@@ -25,6 +25,7 @@ import eu.europa.ec.eudi.wallet.document.DocumentId
 import eu.europa.ec.eudi.wallet.document.DocumentManager
 import eu.europa.ec.eudi.wallet.document.IssuedDocument
 import eu.europa.ec.eudi.wallet.document.format.MsoMdocFormat
+import eu.europa.ec.eudi.wallet.document.format.W3CJwtFormat
 import kotlinx.datetime.Clock
 import kotlinx.datetime.toJavaInstant
 import java.security.cert.X509Certificate
@@ -61,6 +62,23 @@ internal val List<X509Certificate>.cn: String
         ?.get(1)
         ?.trim()
         ?: ""
+
+internal fun DocumentManager.getValidJwtVcJsonDocuments(type: String): List<IssuedDocument> {
+    return getDocuments()
+        .filter { it.format is W3CJwtFormat && (it.format as W3CJwtFormat).types.last() == type }
+        .filter { !it.isKeyInvalidated }
+        .filterIsInstance<IssuedDocument>()
+        .filter { it.isValidAt(Clock.System.now().toJavaInstant()) }
+}
+
+internal fun DocumentManager.getValidJwtVcJsonDocumentById(documentId: String): IssuedDocument {
+    return (getDocumentById(documentId)
+        ?.takeIf { it is IssuedDocument }
+        ?.takeIf { it.format is W3CJwtFormat }
+        ?.takeIf { !it.isKeyInvalidated } as? IssuedDocument)
+        ?.takeIf { it.isValidAt(Clock.System.now().toJavaInstant()) }
+        ?: throw IllegalArgumentException("Invalid document")
+}
 
 internal fun DocumentManager.getValidIssuedMsoMdocDocuments(docType: DocType): List<IssuedDocument> {
     return getDocuments()

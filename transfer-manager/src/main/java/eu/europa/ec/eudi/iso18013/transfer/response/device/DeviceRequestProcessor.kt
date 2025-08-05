@@ -16,8 +16,10 @@
 
 package eu.europa.ec.eudi.iso18013.transfer.response.device
 
+import com.android.identity.cbor.Cbor
 import com.android.identity.mdoc.request.DeviceRequestParser
 import eu.europa.ec.eudi.iso18013.transfer.internal.getValidIssuedMsoMdocDocuments
+import eu.europa.ec.eudi.iso18013.transfer.internal.getValidJwtVcJsonDocuments
 import eu.europa.ec.eudi.iso18013.transfer.internal.readerauth.performReaderAuthentication
 import eu.europa.ec.eudi.iso18013.transfer.readerauth.ReaderTrustStore
 import eu.europa.ec.eudi.iso18013.transfer.readerauth.ReaderTrustStoreAware
@@ -98,12 +100,24 @@ class DeviceRequestProcessor(
                         }
                     }.toMap()
 
-                documentManager.getValidIssuedMsoMdocDocuments(requestedDocument.docType).map {
-                    RequestedDocument(
-                        documentId = it.id,
-                        requestedItems = docItems,
-                        readerAuth = requestedDocument.readerAuthentication.invoke(),
-                    )
+                if(requestedDocument.format == "mdoc") {
+                    documentManager.getValidIssuedMsoMdocDocuments(requestedDocument.docType).map {
+                        RequestedDocument(
+                            documentId = it.id,
+                            format = requestedDocument.format,
+                            requestedItems = docItems,
+                            readerAuth = requestedDocument.readerAuthentication.invoke(),
+                        )
+                    }
+                } else {
+                    documentManager.getValidJwtVcJsonDocuments(requestedDocument.docType).map {
+                        RequestedDocument(
+                            documentId = it.id,
+                            format = requestedDocument.format,
+                            requestedItems = docItems,
+                            readerAuth = requestedDocument.readerAuthentication.invoke(),
+                        )
+                    }
                 }
             }.let { RequestedDocuments(it) }
         }
@@ -117,6 +131,7 @@ class DeviceRequestProcessor(
      */
     data class RequestedMdocDocument(
         val docType: DocType,
+        val format: String,
         val requested: Map<NameSpace, Map<ElementIdentifier, Boolean>>,
         val readerAuthentication: () -> ReaderAuth?
     )
@@ -126,8 +141,29 @@ class DeviceRequestProcessor(
      * @return the [RequestedMdocDocument]
      */
     private fun DeviceRequestParser.DocRequest.toRequestedMdocDocuments(): RequestedMdocDocument {
+        requestInfo.get("format")?.let { encodedFormat ->
+            val format = Cbor.decode(encodedFormat).toString()
+            return RequestedMdocDocument(
+                docType = docType,
+                format = format,
+                requested = namespaces.associate { nameSpace ->
+                    nameSpace to getEntryNames(nameSpace)
+                        .associate { elementIdentifier ->
+                            elementIdentifier to getIntentToRetain(
+                                nameSpace,
+                                elementIdentifier
+                            )
+                        }
+                },
+                readerAuthentication = {
+                    readerTrustStore?.performReaderAuthentication(this)
+                },
+            )
+        }
+
         return RequestedMdocDocument(
             docType = docType,
+            format = "mdoc",
             requested = namespaces.associate { nameSpace ->
                 nameSpace to getEntryNames(nameSpace)
                     .associate { elementIdentifier ->

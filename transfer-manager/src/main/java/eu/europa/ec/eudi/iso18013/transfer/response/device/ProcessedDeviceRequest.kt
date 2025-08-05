@@ -16,6 +16,9 @@
 
 package eu.europa.ec.eudi.iso18013.transfer.response.device
 
+import com.android.identity.cbor.Cbor
+import com.android.identity.cbor.CborArray
+import com.android.identity.cbor.CborMap
 import com.android.identity.crypto.Algorithm
 import com.android.identity.mdoc.response.DeviceResponseGenerator
 import com.android.identity.util.Constants
@@ -24,6 +27,8 @@ import eu.europa.ec.eudi.iso18013.transfer.internal.DocumentResponseGenerator.ge
 import eu.europa.ec.eudi.iso18013.transfer.internal.assertAgeOverRequestLimitForIso18013
 import eu.europa.ec.eudi.iso18013.transfer.internal.filterWithRequestedDocuments
 import eu.europa.ec.eudi.iso18013.transfer.internal.getValidIssuedMsoMdocDocumentById
+import eu.europa.ec.eudi.iso18013.transfer.internal.getValidJwtVcJsonDocumentById
+import eu.europa.ec.eudi.iso18013.transfer.internal.getValidJwtVcJsonDocuments
 import eu.europa.ec.eudi.iso18013.transfer.response.DisclosedDocuments
 import eu.europa.ec.eudi.iso18013.transfer.response.RequestProcessor
 import eu.europa.ec.eudi.iso18013.transfer.response.RequestedDocuments
@@ -65,18 +70,47 @@ class ProcessedDeviceRequest(
                     else it
                 }
                 .forEachIndexed { index, disclosedDocument ->
-                    val documentResponse = documentManager
-                        .getValidIssuedMsoMdocDocumentById(disclosedDocument.documentId)
-                        .assertAgeOverRequestLimitForIso18013(disclosedDocument)
-                        .generateDocumentResponse(
-                            transcript = sessionTranscript,
-                            elements = disclosedDocument.disclosedItems.asMap(),
-                            keyUnlockData = disclosedDocument.keyUnlockData,
-                            signatureAlgorithm = signatureAlgorithm ?: Algorithm.ES256
+                    if(disclosedDocument.format == "mdoc") {
+                        val documentResponse = documentManager
+                            .getValidIssuedMsoMdocDocumentById(disclosedDocument.documentId)
+                            .assertAgeOverRequestLimitForIso18013(disclosedDocument)
+                            .generateDocumentResponse(
+                                transcript = sessionTranscript,
+                                elements = disclosedDocument.disclosedItems.asMap(),
+                                keyUnlockData = disclosedDocument.keyUnlockData,
+                                signatureAlgorithm = signatureAlgorithm ?: Algorithm.ES256
+                            )
+                            .getOrThrow()
+                        deviceResponse.addDocument(documentResponse)
+                        documentIds.add(disclosedDocument.documentId)
+                    } else {
+                        val documentResponse = documentManager
+                            .getValidJwtVcJsonDocumentById(disclosedDocument.documentId)
+                            .generateDocumentResponse(
+                                transcript = sessionTranscript,
+                                elements = disclosedDocument.disclosedItems.asMap(),
+                                keyUnlockData = disclosedDocument.keyUnlockData,
+                                signatureAlgorithm = signatureAlgorithm ?: Algorithm.ES256
+                            )
+                            .getOrThrow()
+
+                        val w3cDocumentBuilder = CborArray.builder()
+                        w3cDocumentBuilder.add(Cbor.decode(documentResponse))
+                        val mapBuilder = CborMap.builder()
+                        mapBuilder.put("version", "1.0")
+                        mapBuilder.put("w3cDocuments", w3cDocumentBuilder.end().build())
+                        mapBuilder.put("status", Constants.DEVICE_RESPONSE_STATUS_OK)
+                            .end()
+
+                        documentIds.add(disclosedDocument.documentId)
+                        return ResponseResult.Success(
+                            DeviceResponse(
+                                deviceResponseBytes = Cbor.encode(mapBuilder.end().build()),
+                                sessionTranscriptBytes = sessionTranscript,
+                                documentIds = documentIds
+                            )
                         )
-                        .getOrThrow()
-                    deviceResponse.addDocument(documentResponse)
-                    documentIds.add(disclosedDocument.documentId)
+                    }
                 }
             return ResponseResult.Success(
                 DeviceResponse(

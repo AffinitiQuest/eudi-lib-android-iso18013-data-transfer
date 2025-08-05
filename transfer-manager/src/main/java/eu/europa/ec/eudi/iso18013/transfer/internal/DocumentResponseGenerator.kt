@@ -16,6 +16,15 @@
 
 package eu.europa.ec.eudi.iso18013.transfer.internal
 
+import com.android.identity.cbor.Bstr
+import com.android.identity.cbor.Cbor
+import com.android.identity.cbor.CborArray
+import com.android.identity.cbor.CborMap
+import com.android.identity.cbor.RawCbor
+import com.android.identity.cbor.Tagged
+import com.android.identity.cbor.toDataItem
+import com.android.identity.cose.Cose
+import com.android.identity.cose.CoseNumberLabel
 import com.android.identity.crypto.Algorithm
 import com.android.identity.document.DocumentRequest
 import com.android.identity.document.NameSpacedData
@@ -27,6 +36,8 @@ import eu.europa.ec.eudi.wallet.document.ElementIdentifier
 import eu.europa.ec.eudi.wallet.document.IssuedDocument
 import eu.europa.ec.eudi.wallet.document.NameSpace
 import eu.europa.ec.eudi.wallet.document.format.MsoMdocData
+import eu.europa.ec.eudi.wallet.document.format.W3CJwtData
+import eu.europa.ec.eudi.wallet.document.format.W3CJwtFormat
 import kotlinx.datetime.Clock
 import kotlinx.datetime.toJavaInstant
 
@@ -54,33 +65,81 @@ internal object DocumentResponseGenerator {
         keyUnlockData: KeyUnlockData? = null,
         signatureAlgorithm: Algorithm = Algorithm.ES256
     ): ByteArray {
-        require(document.data is MsoMdocData) { "Document format is not MsoMdocFormat" }
-        require(!document.isKeyInvalidated) { "Document key is invalidated" }
-        require(document.isValidAt(Clock.System.now().toJavaInstant())) { "Document is not valid" }
-        val documentData = document.data as MsoMdocData
-        val docType = documentData.format.docType
-        val dataElements =
-            (elements ?: documentData.nameSpaces).flatMap { (nameSpace, elementIdentifiers) ->
-                elementIdentifiers.map { elementIdentifier ->
-                    DocumentRequest.DataElement(nameSpace, elementIdentifier, false)
+        if(document.data is MsoMdocData) {
+            require(document.data is MsoMdocData) { "Document format is not MsoMdocFormat" }
+            require(!document.isKeyInvalidated) { "Document key is invalidated" }
+            require(
+                document.isValidAt(
+                    Clock.System.now().toJavaInstant()
+                )
+            ) { "Document is not valid" }
+            val documentData = document.data as MsoMdocData
+            val docType = documentData.format.docType
+            val dataElements =
+                (elements ?: documentData.nameSpaces).flatMap { (nameSpace, elementIdentifiers) ->
+                    elementIdentifiers.map { elementIdentifier ->
+                        DocumentRequest.DataElement(nameSpace, elementIdentifier, false)
+                    }
                 }
-            }
-        val request = DocumentRequest(dataElements)
+            val request = DocumentRequest(dataElements)
 
-        val staticAuthData = StaticAuthDataParser(document.issuerProvidedData).parse()
-        val mergedIssuerNamespaces = MdocUtil.mergeIssuerNamesSpaces(
-            request, documentData.nameSpacedData, staticAuthData
-        )
-        return DocumentGenerator(docType, staticAuthData.issuerAuth, transcript)
-            .setIssuerNamespaces(mergedIssuerNamespaces)
-            .setDeviceNamespacesSignature(
-                dataElements = NameSpacedData.Builder().build(),
-                secureArea = document.secureArea,
-                keyAlias = document.keyAlias,
-                keyUnlockData = keyUnlockData,
-                signatureAlgorithm = signatureAlgorithm
+            val staticAuthData = StaticAuthDataParser(document.issuerProvidedData).parse()
+            val mergedIssuerNamespaces = MdocUtil.mergeIssuerNamesSpaces(
+                request, documentData.nameSpacedData, staticAuthData
             )
-            .generate()
+            return DocumentGenerator(docType, staticAuthData.issuerAuth, transcript)
+                .setIssuerNamespaces(mergedIssuerNamespaces)
+                .setDeviceNamespacesSignature(
+                    dataElements = NameSpacedData.Builder().build(),
+                    secureArea = document.secureArea,
+                    keyAlias = document.keyAlias,
+                    keyUnlockData = keyUnlockData,
+                    signatureAlgorithm = signatureAlgorithm
+                )
+                .generate()
+        } else {
+            val documentData = document.data as W3CJwtData
+            val docType = documentData.format.types.last()
+
+            val deviceAuthentication = Cbor.encode(
+                CborArray.builder()
+                    .add("DeviceAuthentication")
+                    .add(RawCbor(transcript))
+                    .add(docType)
+                    .addTaggedEncodedCbor(byteArrayOf(0xA0.toByte()))
+                    .end()
+                    .build()
+            )
+
+            val deviceAuthenticationBytes = Cbor.encode(Tagged(24, Bstr(deviceAuthentication)))
+            var encodedDeviceSignature: ByteArray? = null
+            encodedDeviceSignature = Cbor.encode(
+                Cose.coseSign1Sign(
+                    document.secureArea,
+                    document.keyAlias,
+                    deviceAuthenticationBytes,
+                    false,
+                    signatureAlgorithm,
+                    mapOf(
+                        Pair(
+                            CoseNumberLabel(Cose.COSE_LABEL_ALG),
+                            signatureAlgorithm.coseAlgorithmIdentifier.toDataItem()
+                        )
+                    ),
+                    mapOf(),
+                    keyUnlockData
+                ).toDataItem()
+            )
+
+            val deviceSignedMap = CborMap.builder()
+            deviceSignedMap.put("deviceSignature", Cbor.decode(encodedDeviceSignature))
+            val mapBuilder = CborMap.builder()
+            mapBuilder.put("docType", (document.format as W3CJwtFormat).types.last())
+            mapBuilder.put("jwt", String(document.issuerProvidedData))
+            mapBuilder.put("deviceAuth", deviceSignedMap.end().build())
+
+            return Cbor.encode(mapBuilder.end().build())
+        }
     }
 
     fun IssuedDocument.generateDocumentResponse(
