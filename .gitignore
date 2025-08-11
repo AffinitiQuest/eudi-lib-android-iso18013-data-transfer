@@ -10,3 +10,4 @@
 .kotlin
 local.properties
 /transfer-manager/release/
+transfer-manager/.idea
