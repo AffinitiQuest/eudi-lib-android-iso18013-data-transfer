@@ -100,7 +100,7 @@ class DeviceRequestProcessor(
                         }
                     }.toMap()
 
-                if(requestedDocument.format == "cbor") {
+                if(requestedDocument.format == "mdoc") {
                     documentManager.getValidIssuedMsoMdocDocuments(requestedDocument.docType).map {
                         RequestedDocument(
                             documentId = it.id,
@@ -163,7 +163,7 @@ class DeviceRequestProcessor(
 
         return RequestedMdocDocument(
             docType = docType,
-            format = "cbor",
+            format = "mdoc",
             requested = namespaces.associate { nameSpace ->
                 nameSpace to getEntryNames(nameSpace)
                     .associate { elementIdentifier ->
