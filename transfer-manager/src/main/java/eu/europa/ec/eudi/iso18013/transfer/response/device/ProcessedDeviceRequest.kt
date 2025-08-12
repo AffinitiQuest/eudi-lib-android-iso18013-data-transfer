@@ -70,7 +70,7 @@ class ProcessedDeviceRequest(
                     else it
                 }
                 .forEachIndexed { index, disclosedDocument ->
-                    if(disclosedDocument.format == "mdoc") {
+                    if(disclosedDocument.format == "cbor") {
                         val documentResponse = documentManager
                             .getValidIssuedMsoMdocDocumentById(disclosedDocument.documentId)
                             .assertAgeOverRequestLimitForIso18013(disclosedDocument)

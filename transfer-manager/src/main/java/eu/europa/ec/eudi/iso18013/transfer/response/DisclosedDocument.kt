@@ -40,7 +40,7 @@ data class DisclosedDocument(
      */
     constructor(
         requestedDocument: RequestedDocument,
-        format: String = "mdoc",
+        format: String = "cbor",
         disclosedItems: List<DocItem>? = null,
         keyUnlockData: KeyUnlockData? = null
     ) : this(
