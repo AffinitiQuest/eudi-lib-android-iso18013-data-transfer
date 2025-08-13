@@ -142,7 +142,7 @@ class DeviceRequestProcessor(
      */
     private fun DeviceRequestParser.DocRequest.toRequestedMdocDocuments(): RequestedMdocDocument {
         requestInfo.get("format")?.let { encodedFormat ->
-            val format = Cbor.decode(encodedFormat).toString()
+            val format = Cbor.decode(encodedFormat).asTstr
             return RequestedMdocDocument(
                 docType = docType,
                 format = format,
