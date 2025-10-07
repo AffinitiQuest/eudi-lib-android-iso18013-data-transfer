@@ -68,7 +68,7 @@ internal fun DocumentManager.getValidJwtVcJsonDocuments(type: String): List<Issu
         .filter { it.format is W3CJwtFormat && (it.format as W3CJwtFormat).types.last() == type }
         .filter { !it.isKeyInvalidated }
         .filterIsInstance<IssuedDocument>()
-        .filter { it.isValidAt(Clock.System.now().toJavaInstant()) }
+        //.filter { it.isValidAt(Clock.System.now().toJavaInstant()) }
 }
 
 internal fun DocumentManager.getValidJwtVcJsonDocumentById(documentId: String): IssuedDocument {
@@ -76,7 +76,7 @@ internal fun DocumentManager.getValidJwtVcJsonDocumentById(documentId: String): 
         ?.takeIf { it is IssuedDocument }
         ?.takeIf { it.format is W3CJwtFormat }
         ?.takeIf { !it.isKeyInvalidated } as? IssuedDocument)
-        ?.takeIf { it.isValidAt(Clock.System.now().toJavaInstant()) }
+        //?.takeIf { it.isValidAt(Clock.System.now().toJavaInstant()) }
         ?: throw IllegalArgumentException("Invalid document")
 }
 
@@ -85,7 +85,7 @@ internal fun DocumentManager.getValidIssuedMsoMdocDocuments(docType: DocType): L
         .filter { it.format is MsoMdocFormat && (it.format as MsoMdocFormat).docType == docType }
         .filter { !it.isKeyInvalidated }
         .filterIsInstance<IssuedDocument>()
-        .filter { it.isValidAt(Clock.System.now().toJavaInstant()) }
+        //.filter { it.isValidAt(Clock.System.now().toJavaInstant()) }
 }
 
 internal fun DocumentManager.getValidIssuedMsoMdocDocumentById(documentId: DocumentId): IssuedDocument {
@@ -93,7 +93,7 @@ internal fun DocumentManager.getValidIssuedMsoMdocDocumentById(documentId: Docum
         ?.takeIf { it is IssuedDocument }
         ?.takeIf { it.format is MsoMdocFormat }
         ?.takeIf { !it.isKeyInvalidated } as? IssuedDocument)
-        ?.takeIf { it.isValidAt(Clock.System.now().toJavaInstant()) }
+        //?.takeIf { it.isValidAt(Clock.System.now().toJavaInstant()) }
         ?: throw IllegalArgumentException("Invalid document")
 }
 

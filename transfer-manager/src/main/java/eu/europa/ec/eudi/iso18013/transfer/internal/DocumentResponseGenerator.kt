@@ -68,11 +68,11 @@ internal object DocumentResponseGenerator {
         if(document.data is MsoMdocData) {
             require(document.data is MsoMdocData) { "Document format is not MsoMdocFormat" }
             require(!document.isKeyInvalidated) { "Document key is invalidated" }
-            require(
-                document.isValidAt(
-                    Clock.System.now().toJavaInstant()
-                )
-            ) { "Document is not valid" }
+            //require(
+            //    document.isValidAt(
+            //        Clock.System.now().toJavaInstant()
+            //    )
+            //) { "Document is not valid" }
             val documentData = document.data as MsoMdocData
             val docType = documentData.format.docType
             val dataElements =
