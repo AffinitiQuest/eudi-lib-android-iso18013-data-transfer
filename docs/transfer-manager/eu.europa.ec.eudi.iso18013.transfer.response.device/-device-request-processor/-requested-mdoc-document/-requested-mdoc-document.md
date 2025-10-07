@@ -3,4 +3,4 @@
 # RequestedMdocDocument
 
 [androidJvm]\
-constructor(docType: DocType, requested: [Map](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-map/index.html)&lt;NameSpace, [Map](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-map/index.html)&lt;ElementIdentifier, [Boolean](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html)&gt;&gt;, readerAuthentication: () -&gt; [ReaderAuth](../../../eu.europa.ec.eudi.iso18013.transfer.response/-reader-auth/index.md)?)
+constructor(docType: DocType, format: [String](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html), requested: [Map](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-map/index.html)&lt;NameSpace, [Map](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-map/index.html)&lt;ElementIdentifier, [Boolean](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html)&gt;&gt;, readerAuthentication: () -&gt; [ReaderAuth](../../../eu.europa.ec.eudi.iso18013.transfer.response/-reader-auth/index.md)?)
