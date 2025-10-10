@@ -64,10 +64,32 @@ class DeviceRequestProcessor(
                     .docRequests
                     .map { docRequest -> docRequest.toRequestedMdocDocuments() }
                     .let { helper.getRequestedDocuments(it) }
+            val docRequests =
+                DeviceRequestParser(request.deviceRequestBytes, request.sessionTranscriptBytes)
+                    .parse()
+                    .docRequests
+            val requestedMdocDocuments = docRequests.map { docRequest -> docRequest.toRequestedMdocDocuments() }
+            val requestedDocTypes = docRequests.map { docRequest -> docRequest.docType }
+            // We do not get any requestedDocs back if the wallet does not contain one matching the
+            // ID, but we need verifierName and requestedDocTypes to present information to the user.
+            var verifierName = "[verifier name]"
+            if(requestedMdocDocuments.size > 0) {
+                val readerAuth = requestedMdocDocuments.get(0).readerAuthentication?.invoke()
+                val name = readerAuth?.readerCertificateChain?.get(0)?.subjectX500Principal?.name
+                val subjectPrincipal = name?.let { it } ?: ""
+                val pattern = """(?:^|,\s?)(?:O=(?<val>"(?:[^"]|"")+"|[^,]+))"""
+                val regex = Regex(pattern)
+                val match = regex.find(subjectPrincipal)
+                val orgName = match?.let { it.groups["val"]?.value } ?: ""
+                verifierName = orgName
+            }
+
             return ProcessedDeviceRequest(
                 documentManager = documentManager,
                 requestedDocuments = requestedDocuments,
-                sessionTranscript = request.sessionTranscriptBytes
+                sessionTranscript = request.sessionTranscriptBytes,
+                requestedDocTypes = requestedDocTypes.toTypedArray(),
+                verifierName = verifierName
             )
         } catch (e: Throwable) {
             return RequestProcessor.ProcessedRequest.Failure(e)

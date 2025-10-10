@@ -46,9 +46,10 @@ import eu.europa.ec.eudi.wallet.document.DocumentManager
 class ProcessedDeviceRequest(
     private val documentManager: DocumentManager,
     private val sessionTranscript: ByteArray,
-    requestedDocuments: RequestedDocuments
+    requestedDocuments: RequestedDocuments,
+    val requestedDocTypes: Array<String>,
+    val verifierName: String
 ) : RequestProcessor.ProcessedRequest.Success(requestedDocuments) {
-
     var includeOnlyRequested: Boolean = true
 
     /**
