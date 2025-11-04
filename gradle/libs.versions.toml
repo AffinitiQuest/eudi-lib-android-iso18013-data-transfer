@@ -6,7 +6,7 @@ dependency-license-report = "2.8"
 dependencycheck = "9.0.9"
 dokka = "1.9.20"
 espressoCore = "3.6.1"
-eudi-document-manager = "0.9.1-aq"
+eudi-document-manager = "0.9.1"
 google-identity = "202408.1"
 google-identity-android = "202408.1"
 google-identity-mdoc = "202408.1"
@@ -14,7 +14,7 @@ jacoco = "0.8.12"
 java = "17"
 json = "20240303"
 junitVersion = "1.2.1"
-kotlin = "2.0.21"
+kotlin = "2.1.21"
 kotlinx-datetime = "0.6.0"
 kotlinx-io = "0.4.0"
 mavenPublish = "0.27.0"
@@ -31,7 +31,7 @@ androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "j
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 bouncy-castle-pkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncy-castle" }
 bouncy-castle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncy-castle" }
-eudi-document-manager = { module = "eu.europa.ec.eudi:eudi-lib-android-wallet-document-manager", version.ref = "eudi-document-manager" }
+eudi-document-manager = { module = "eu.europa.ec.eudi.aq:eudi-lib-android-wallet-document-manager", version.ref = "eudi-document-manager" }
 google-identity = { module = "com.android.identity:identity", version.ref = "google-identity" }
 google-identity-android = { module = "com.android.identity:identity-android", version.ref = "google-identity-android" }
 google-identity-mdoc = { module = "com.android.identity:identity-mdoc", version.ref = "google-identity-mdoc" }
