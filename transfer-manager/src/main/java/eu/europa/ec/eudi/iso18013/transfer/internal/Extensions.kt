@@ -25,6 +25,7 @@ import eu.europa.ec.eudi.wallet.document.DocumentId
 import eu.europa.ec.eudi.wallet.document.DocumentManager
 import eu.europa.ec.eudi.wallet.document.IssuedDocument
 import eu.europa.ec.eudi.wallet.document.format.MsoMdocFormat
+import eu.europa.ec.eudi.wallet.document.format.W3CJwtFormat
 import java.security.cert.X509Certificate
 import java.util.concurrent.Executor
 
@@ -73,6 +74,25 @@ internal suspend fun DocumentManager.getValidIssuedMsoMdocDocumentById(documentI
         ?.takeIf { it is IssuedDocument }
         ?.let { it as IssuedDocument }
         ?.takeIf { it.findCredential() != null }
+        ?: throw IllegalArgumentException("Invalid document")
+}
+
+internal suspend fun DocumentManager.getValidJwtVcJsonDocuments(type: String): List<IssuedDocument> {
+    return getDocuments()
+        .filter { it.format is W3CJwtFormat && (it.format as W3CJwtFormat).types.last() == type }
+        .filter { !it.isKeyInvalidated }
+        .filterIsInstance<IssuedDocument>()
+        .filter { it.findCredential() != null }
+    //.filter { it.isValidAt(Clock.System.now().toJavaInstant()) }
+}
+
+internal suspend fun DocumentManager.getValidJwtVcJsonDocumentById(documentId: String): IssuedDocument {
+    return (getDocumentById(documentId)
+        ?.takeIf { it is IssuedDocument }
+        ?.takeIf { it.format is W3CJwtFormat }
+        ?.takeIf { !it.isKeyInvalidated } as? IssuedDocument)
+        ?.takeIf { it.findCredential() != null }
+    //?.takeIf { it.isValidAt(Clock.System.now().toJavaInstant()) }
         ?: throw IllegalArgumentException("Invalid document")
 }
 

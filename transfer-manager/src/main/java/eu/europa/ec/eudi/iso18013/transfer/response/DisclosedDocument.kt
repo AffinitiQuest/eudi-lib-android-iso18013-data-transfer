@@ -28,6 +28,7 @@ import org.multipaz.securearea.KeyUnlockData
  */
 data class DisclosedDocument(
     val documentId: DocumentId,
+    val format: String,
     val disclosedItems: List<DocItem>,
     val keyUnlockData: KeyUnlockData? = null,
 ) {
@@ -39,10 +40,12 @@ data class DisclosedDocument(
      */
     constructor(
         requestedDocument: RequestedDocument,
+        format: String = "cbor",
         disclosedItems: List<DocItem>? = null,
         keyUnlockData: KeyUnlockData? = null
     ) : this(
         requestedDocument.documentId,
+        format,
         disclosedItems ?: requestedDocument.requestedItems.keys.toList(),
         keyUnlockData
     )

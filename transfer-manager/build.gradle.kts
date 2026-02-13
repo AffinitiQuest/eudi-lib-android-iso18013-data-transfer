@@ -88,6 +88,10 @@ android {
             withSourcesJar()
         }
     }
+
+    signing {
+        isRequired = false
+    }
 }
 
 dependencies {

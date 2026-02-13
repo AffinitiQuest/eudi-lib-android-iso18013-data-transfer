@@ -17,6 +17,7 @@
 package eu.europa.ec.eudi.iso18013.transfer.response.device
 
 import eu.europa.ec.eudi.iso18013.transfer.internal.getValidIssuedMsoMdocDocuments
+import eu.europa.ec.eudi.iso18013.transfer.internal.getValidJwtVcJsonDocuments
 import eu.europa.ec.eudi.iso18013.transfer.internal.readerauth.performReaderAuthentication
 import eu.europa.ec.eudi.iso18013.transfer.readerauth.ReaderTrustStore
 import eu.europa.ec.eudi.iso18013.transfer.readerauth.ReaderTrustStoreAware
@@ -30,6 +31,7 @@ import eu.europa.ec.eudi.wallet.document.DocumentManager
 import eu.europa.ec.eudi.wallet.document.ElementIdentifier
 import eu.europa.ec.eudi.wallet.document.NameSpace
 import kotlinx.coroutines.runBlocking
+import org.multipaz.cbor.Cbor
 import org.multipaz.mdoc.request.DeviceRequestParser
 
 /**
@@ -64,10 +66,32 @@ class DeviceRequestProcessor(
                     .map { docRequest -> docRequest.toRequestedMdocDocuments() }
                     .let { helper.getRequestedDocuments(it) }
             }
+            val docRequests =
+                DeviceRequestParser(request.deviceRequestBytes, request.sessionTranscriptBytes)
+                    .parse()
+                    .docRequests
+            val requestedMdocDocuments = docRequests.map { docRequest -> docRequest.toRequestedMdocDocuments() }
+            val requestedDocTypes = docRequests.map { docRequest -> docRequest.docType }
+            // We do not get any requestedDocs back if the wallet does not contain one matching the
+            // ID, but we need verifierName and requestedDocTypes to present information to the user.
+            var verifierName = "[verifier name]"
+            if(requestedMdocDocuments.size > 0) {
+                val readerAuth = requestedMdocDocuments.get(0).readerAuthentication?.invoke()
+                val name = readerAuth?.readerCertificateChain?.get(0)?.subjectX500Principal?.name
+                val subjectPrincipal = name?.let { it } ?: ""
+                val pattern = """(?:^|,\s?)(?:O=(?<val>"(?:[^"]|"")+"|[^,]+))"""
+                val regex = Regex(pattern)
+                val match = regex.find(subjectPrincipal)
+                val orgName = match?.let { it.groups["val"]?.value } ?: ""
+                verifierName = orgName
+            }
+
             return ProcessedDeviceRequest(
                 documentManager = documentManager,
                 requestedDocuments = requestedDocuments,
-                sessionTranscript = request.sessionTranscriptBytes
+                sessionTranscript = request.sessionTranscriptBytes,
+                requestedDocTypes = requestedDocTypes.toTypedArray(),
+                verifierName = verifierName
             )
         } catch (e: Throwable) {
             return RequestProcessor.ProcessedRequest.Failure(e)
@@ -100,12 +124,24 @@ class DeviceRequestProcessor(
                         }
                     }.toMap()
 
-                documentManager.getValidIssuedMsoMdocDocuments(requestedDocument.docType).map {
-                    RequestedDocument(
-                        documentId = it.id,
-                        requestedItems = docItems,
-                        readerAuth = requestedDocument.readerAuthentication.invoke(),
-                    )
+                if(requestedDocument.format == "mdoc") {
+                    documentManager.getValidIssuedMsoMdocDocuments(requestedDocument.docType).map {
+                        RequestedDocument(
+                            documentId = it.id,
+                            format = requestedDocument.format,
+                            requestedItems = docItems,
+                            readerAuth = requestedDocument.readerAuthentication.invoke(),
+                        )
+                    }
+                } else {
+                    documentManager.getValidJwtVcJsonDocuments(requestedDocument.docType).map {
+                        RequestedDocument(
+                            documentId = it.id,
+                            format = requestedDocument.format,
+                            requestedItems = docItems,
+                            readerAuth = requestedDocument.readerAuthentication.invoke(),
+                        )
+                    }
                 }
             }.let { RequestedDocuments(it) }
         }
@@ -119,6 +155,7 @@ class DeviceRequestProcessor(
      */
     data class RequestedMdocDocument(
         val docType: DocType,
+        val format: String,
         val requested: Map<NameSpace, Map<ElementIdentifier, Boolean>>,
         val readerAuthentication: () -> ReaderAuth?
     )
@@ -128,8 +165,29 @@ class DeviceRequestProcessor(
      * @return the [RequestedMdocDocument]
      */
     private fun DeviceRequestParser.DocRequest.toRequestedMdocDocuments(): RequestedMdocDocument {
+        requestInfo.get("format")?.let { encodedFormat ->
+            val format = Cbor.decode(encodedFormat).asTstr
+            return RequestedMdocDocument(
+                docType = docType,
+                format = format,
+                requested = namespaces.associate { nameSpace ->
+                    nameSpace to getEntryNames(nameSpace)
+                        .associate { elementIdentifier ->
+                            elementIdentifier to getIntentToRetain(
+                                nameSpace,
+                                elementIdentifier
+                            )
+                        }
+                },
+                readerAuthentication = {
+                    readerTrustStore?.performReaderAuthentication(this)
+                },
+            )
+        }
+
         return RequestedMdocDocument(
             docType = docType,
+            format = "mdoc",
             requested = namespaces.associate { nameSpace ->
                 nameSpace to getEntryNames(nameSpace)
                     .associate { elementIdentifier ->

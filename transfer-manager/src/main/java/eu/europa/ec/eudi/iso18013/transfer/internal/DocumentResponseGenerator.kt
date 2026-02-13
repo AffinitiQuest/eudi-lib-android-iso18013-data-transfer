@@ -21,7 +21,22 @@ import eu.europa.ec.eudi.wallet.document.IssuedDocument
 import eu.europa.ec.eudi.wallet.document.NameSpace
 import eu.europa.ec.eudi.wallet.document.credential.CredentialIssuedData
 import eu.europa.ec.eudi.wallet.document.credential.getIssuedData
+import eu.europa.ec.eudi.wallet.document.format.MsoMdocData
+import eu.europa.ec.eudi.wallet.document.format.W3CJwtData
+import eu.europa.ec.eudi.wallet.document.format.W3CJwtFormat
 import kotlinx.coroutines.runBlocking
+import org.multipaz.cbor.Bstr
+import org.multipaz.cbor.Cbor
+import org.multipaz.cbor.CborArray
+import org.multipaz.cbor.CborMap
+import org.multipaz.cbor.DataItem
+import org.multipaz.cbor.RawCbor
+import org.multipaz.cbor.Tagged
+import org.multipaz.cbor.toDataItem
+import org.multipaz.cose.Cose
+import org.multipaz.cose.CoseLabel
+import org.multipaz.cose.CoseNumberLabel
+import org.multipaz.crypto.Algorithm
 import org.multipaz.document.DocumentRequest
 import org.multipaz.document.NameSpacedData
 import org.multipaz.mdoc.credential.MdocCredential
@@ -53,31 +68,75 @@ internal object DocumentResponseGenerator {
     ): ByteArray {
         return runBlocking {
             document.consumingCredential {
-                require(this is MdocCredential) { "Document must be in MsoMdocFormat" }
-                val credentialIssuedData =
-                    getIssuedData<CredentialIssuedData.MsoMdoc>()
-                val (nameSpacedData, staticAuthData) = credentialIssuedData.getOrThrow()
-                val dataElements = (elements ?: nameSpacedData.nameSpaceNames.associateWith {
-                    nameSpacedData.getDataElementNames(it)
-                }).flatMap { (nameSpace, elementIdentifiers) ->
-                    elementIdentifiers.map { elementIdentifier ->
-                        DocumentRequest.DataElement(nameSpace, elementIdentifier, false)
+                if(document.data is MsoMdocData) {
+                    require(this is MdocCredential) { "Document must be in MsoMdocFormat" }
+                    val credentialIssuedData =
+                        getIssuedData<CredentialIssuedData.MsoMdoc>()
+                    val (nameSpacedData, staticAuthData) = credentialIssuedData.getOrThrow()
+                    val dataElements = (elements ?: nameSpacedData.nameSpaceNames.associateWith {
+                        nameSpacedData.getDataElementNames(it)
+                    }).flatMap { (nameSpace, elementIdentifiers) ->
+                        elementIdentifiers.map { elementIdentifier ->
+                            DocumentRequest.DataElement(nameSpace, elementIdentifier, false)
+                        }
                     }
-                }
-                val request = DocumentRequest(dataElements)
 
-                val mergedIssuerNamespaces = MdocUtil.mergeIssuerNamesSpaces(
-                    request, nameSpacedData, staticAuthData
-                )
-                DocumentGenerator(docType, staticAuthData.issuerAuth, transcript)
-                    .setIssuerNamespaces(mergedIssuerNamespaces)
-                    .setDeviceNamespacesSignature(
-                        dataElements = NameSpacedData.Builder().build(),
-                        secureArea = secureArea,
-                        keyAlias = alias,
-                        keyUnlockData = keyUnlockData
+                    val request = DocumentRequest(dataElements)
+
+                    val mergedIssuerNamespaces = MdocUtil.mergeIssuerNamesSpaces(
+                        request, nameSpacedData, staticAuthData
                     )
-                    .generate()
+                    DocumentGenerator(docType, staticAuthData.issuerAuth, transcript)
+                        .setIssuerNamespaces(mergedIssuerNamespaces)
+                        .setDeviceNamespacesSignature(
+                            dataElements = NameSpacedData.Builder().build(),
+                            secureArea = secureArea,
+                            keyAlias = alias,
+                            keyUnlockData = keyUnlockData
+                        )
+                        .generate()
+                } else {
+                    val documentData = document.data as W3CJwtData
+                    val docType = documentData.format.types.last()
+
+                    val deviceAuthentication = Cbor.encode(
+                        CborArray.builder()
+                            .add("DeviceAuthentication")
+                            .add(RawCbor(transcript))
+                            .add(docType)
+                            .addTaggedEncodedCbor(byteArrayOf(0xA0.toByte()))
+                            .end()
+                            .build()
+                    )
+
+                    val deviceAuthenticationBytes = Cbor.encode(Tagged(24, Bstr(deviceAuthentication)))
+                    var encodedDeviceSignature: ByteArray? = null
+                    encodedDeviceSignature = Cbor.encode(
+                        Cose.coseSign1Sign(
+                            document.secureArea,
+                            document.keyAlias,
+                            deviceAuthenticationBytes,
+                            false,
+                            mapOf(
+                                Pair(
+                                    CoseNumberLabel(Cose.COSE_LABEL_ALG),
+                                    Algorithm.ES256.coseAlgorithmIdentifier!!.toDataItem()
+                                )
+                            ),
+                            mapOf<CoseLabel, DataItem>(),
+                            keyUnlockData
+                        ).toDataItem()
+                    )
+
+                    val deviceSignedMap = CborMap.builder()
+                    deviceSignedMap.put("deviceSignature", Cbor.decode(encodedDeviceSignature))
+                    val mapBuilder = CborMap.builder()
+                    mapBuilder.put("docType", (document.format as W3CJwtFormat).types.last())
+                    mapBuilder.put("jwt", String(document.issuerProvidedData))
+                    mapBuilder.put("deviceAuth", deviceSignedMap.end().build())
+
+                    Cbor.encode(mapBuilder.end().build())
+                }
             }.getOrThrow()
         }
     }
