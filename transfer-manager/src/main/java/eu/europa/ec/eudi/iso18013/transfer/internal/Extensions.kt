@@ -79,7 +79,7 @@ internal suspend fun DocumentManager.getValidIssuedMsoMdocDocumentById(documentI
 
 internal suspend fun DocumentManager.getValidJwtVcJsonDocuments(type: String): List<IssuedDocument> {
     return getDocuments()
-        .filter { it.format is W3CJwtFormat && (it.format as W3CJwtFormat).types.last() == type }
+        .filter { it.format is W3CJwtFormat && (it.format as W3CJwtFormat).types.contains(type) }
         .filter { !it.isKeyInvalidated }
         .filterIsInstance<IssuedDocument>()
         .filter { it.findCredential() != null }
