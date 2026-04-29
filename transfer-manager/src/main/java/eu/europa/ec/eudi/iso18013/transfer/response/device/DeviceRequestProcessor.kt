@@ -18,6 +18,8 @@ package eu.europa.ec.eudi.iso18013.transfer.response.device
 
 import eu.europa.ec.eudi.iso18013.transfer.internal.getValidIssuedMsoMdocDocuments
 import eu.europa.ec.eudi.iso18013.transfer.internal.getValidJwtVcJsonDocuments
+import eu.europa.ec.eudi.iso18013.transfer.internal.getValidLdpVcDocuments
+import eu.europa.ec.eudi.iso18013.transfer.internal.getValidSdJwtDocuments
 import eu.europa.ec.eudi.iso18013.transfer.internal.readerauth.performReaderAuthentication
 import eu.europa.ec.eudi.iso18013.transfer.readerauth.ReaderTrustStore
 import eu.europa.ec.eudi.iso18013.transfer.readerauth.ReaderTrustStoreAware
@@ -124,24 +126,19 @@ class DeviceRequestProcessor(
                         }
                     }.toMap()
 
-                if(requestedDocument.format == "mdoc") {
-                    documentManager.getValidIssuedMsoMdocDocuments(requestedDocument.docType).map {
-                        RequestedDocument(
-                            documentId = it.id,
-                            format = requestedDocument.format,
-                            requestedItems = docItems,
-                            readerAuth = requestedDocument.readerAuthentication.invoke(),
-                        )
-                    }
-                } else {
-                    documentManager.getValidJwtVcJsonDocuments(requestedDocument.docType).map {
-                        RequestedDocument(
-                            documentId = it.id,
-                            format = requestedDocument.format,
-                            requestedItems = docItems,
-                            readerAuth = requestedDocument.readerAuthentication.invoke(),
-                        )
-                    }
+                when (requestedDocument.format) {
+                    "mdoc", "mso_mdoc" -> documentManager.getValidIssuedMsoMdocDocuments(requestedDocument.docType)
+                    "vc+sd-jwt", "dc+sd-jwt", "sd-jwt" -> documentManager.getValidSdJwtDocuments(requestedDocument.docType)
+                    "ldp_vc" -> documentManager.getValidLdpVcDocuments(requestedDocument.docType)
+                    "jwt_vc_json", "jwt_vc", "vc+jwt", "w3cjwt" -> documentManager.getValidJwtVcJsonDocuments(requestedDocument.docType)
+                    else -> throw IllegalArgumentException("Unsupported format: ${requestedDocument.format}")
+                }.map {
+                    RequestedDocument(
+                        documentId = it.id,
+                        format = requestedDocument.format,
+                        requestedItems = docItems,
+                        readerAuth = requestedDocument.readerAuthentication.invoke(),
+                    )
                 }
             }.let { RequestedDocuments(it) }
         }

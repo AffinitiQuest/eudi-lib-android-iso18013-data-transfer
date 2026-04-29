@@ -21,7 +21,11 @@ import eu.europa.ec.eudi.wallet.document.IssuedDocument
 import eu.europa.ec.eudi.wallet.document.NameSpace
 import eu.europa.ec.eudi.wallet.document.credential.CredentialIssuedData
 import eu.europa.ec.eudi.wallet.document.credential.getIssuedData
+import eu.europa.ec.eudi.wallet.document.format.LdpVcData
+import eu.europa.ec.eudi.wallet.document.format.LdpVcFormat
 import eu.europa.ec.eudi.wallet.document.format.MsoMdocData
+import eu.europa.ec.eudi.wallet.document.format.SdJwtVcData
+import eu.europa.ec.eudi.wallet.document.format.SdJwtVcFormat
 import eu.europa.ec.eudi.wallet.document.format.W3CJwtData
 import eu.europa.ec.eudi.wallet.document.format.W3CJwtFormat
 import kotlinx.coroutines.runBlocking
@@ -96,46 +100,65 @@ internal object DocumentResponseGenerator {
                         )
                         .generate()
                 } else {
-                    val documentData = document.data as W3CJwtData
-                    val docType = documentData.format.types.last()
+                    suspend fun buildDeviceAuth(docType: String): DataItem {
+                        val deviceAuthentication = Cbor.encode(
+                            CborArray.builder()
+                                .add("DeviceAuthentication")
+                                .add(RawCbor(transcript))
+                                .add(docType)
+                                .addTaggedEncodedCbor(byteArrayOf(0xA0.toByte()))
+                                .end()
+                                .build()
+                        )
+                        val deviceAuthenticationBytes = Cbor.encode(Tagged(24, Bstr(deviceAuthentication)))
+                        val encodedDeviceSignature = Cbor.encode(
+                            Cose.coseSign1Sign(
+                                document.secureArea,
+                                document.keyAlias,
+                                deviceAuthenticationBytes,
+                                false,
+                                mapOf(
+                                    Pair(
+                                        CoseNumberLabel(Cose.COSE_LABEL_ALG),
+                                        Algorithm.ES256.coseAlgorithmIdentifier!!.toDataItem()
+                                    )
+                                ),
+                                mapOf<CoseLabel, DataItem>(),
+                                keyUnlockData
+                            ).toDataItem()
+                        )
+                        val deviceSignedMap = CborMap.builder()
+                        deviceSignedMap.put("deviceSignature", Cbor.decode(encodedDeviceSignature))
+                        return deviceSignedMap.end().build()
+                    }
 
-                    val deviceAuthentication = Cbor.encode(
-                        CborArray.builder()
-                            .add("DeviceAuthentication")
-                            .add(RawCbor(transcript))
-                            .add(docType)
-                            .addTaggedEncodedCbor(byteArrayOf(0xA0.toByte()))
-                            .end()
-                            .build()
-                    )
-
-                    val deviceAuthenticationBytes = Cbor.encode(Tagged(24, Bstr(deviceAuthentication)))
-                    var encodedDeviceSignature: ByteArray? = null
-                    encodedDeviceSignature = Cbor.encode(
-                        Cose.coseSign1Sign(
-                            document.secureArea,
-                            document.keyAlias,
-                            deviceAuthenticationBytes,
-                            false,
-                            mapOf(
-                                Pair(
-                                    CoseNumberLabel(Cose.COSE_LABEL_ALG),
-                                    Algorithm.ES256.coseAlgorithmIdentifier!!.toDataItem()
-                                )
-                            ),
-                            mapOf<CoseLabel, DataItem>(),
-                            keyUnlockData
-                        ).toDataItem()
-                    )
-
-                    val deviceSignedMap = CborMap.builder()
-                    deviceSignedMap.put("deviceSignature", Cbor.decode(encodedDeviceSignature))
-                    val mapBuilder = CborMap.builder()
-                    mapBuilder.put("docType", (document.format as W3CJwtFormat).types.last())
-                    mapBuilder.put("jwt", String(document.issuerProvidedData))
-                    mapBuilder.put("deviceAuth", deviceSignedMap.end().build())
-
-                    Cbor.encode(mapBuilder.end().build())
+                    when (val documentData = document.data) {
+                        is W3CJwtData -> {
+                            val docType = documentData.format.types.last()
+                            val mapBuilder = CborMap.builder()
+                            mapBuilder.put("docType", docType)
+                            mapBuilder.put("jwt", String(document.issuerProvidedData))
+                            mapBuilder.put("deviceAuth", buildDeviceAuth(docType))
+                            Cbor.encode(mapBuilder.end().build())
+                        }
+                        is SdJwtVcData -> {
+                            val vct = documentData.format.vct
+                            val mapBuilder = CborMap.builder()
+                            mapBuilder.put("docType", vct)
+                            mapBuilder.put("sdJwt", String(document.issuerProvidedData))
+                            mapBuilder.put("deviceAuth", buildDeviceAuth(vct))
+                            Cbor.encode(mapBuilder.end().build())
+                        }
+                        is LdpVcData -> {
+                            val docType = documentData.format.types.last()
+                            val mapBuilder = CborMap.builder()
+                            mapBuilder.put("docType", docType)
+                            mapBuilder.put("ldpVc", String(document.issuerProvidedData))
+                            mapBuilder.put("deviceAuth", buildDeviceAuth(docType))
+                            Cbor.encode(mapBuilder.end().build())
+                        }
+                        else -> throw IllegalArgumentException("Unsupported document format: ${document.data?.javaClass?.simpleName}")
+                    }
                 }
             }.getOrThrow()
         }

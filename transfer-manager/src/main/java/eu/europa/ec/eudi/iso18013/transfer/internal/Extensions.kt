@@ -24,7 +24,9 @@ import eu.europa.ec.eudi.wallet.document.DocType
 import eu.europa.ec.eudi.wallet.document.DocumentId
 import eu.europa.ec.eudi.wallet.document.DocumentManager
 import eu.europa.ec.eudi.wallet.document.IssuedDocument
+import eu.europa.ec.eudi.wallet.document.format.LdpVcFormat
 import eu.europa.ec.eudi.wallet.document.format.MsoMdocFormat
+import eu.europa.ec.eudi.wallet.document.format.SdJwtVcFormat
 import eu.europa.ec.eudi.wallet.document.format.W3CJwtFormat
 import java.security.cert.X509Certificate
 import java.util.concurrent.Executor
@@ -93,6 +95,40 @@ internal suspend fun DocumentManager.getValidJwtVcJsonDocumentById(documentId: S
         ?.takeIf { !it.isKeyInvalidated } as? IssuedDocument)
         ?.takeIf { it.findCredential() != null }
     //?.takeIf { it.isValidAt(Clock.System.now().toJavaInstant()) }
+        ?: throw IllegalArgumentException("Invalid document")
+}
+
+internal suspend fun DocumentManager.getValidSdJwtDocuments(vct: String): List<IssuedDocument> {
+    return getDocuments()
+        .filter { it.format is SdJwtVcFormat && (it.format as SdJwtVcFormat).vct == vct }
+        .filter { !it.isKeyInvalidated }
+        .filterIsInstance<IssuedDocument>()
+        .filter { it.findCredential() != null }
+}
+
+internal suspend fun DocumentManager.getValidSdJwtDocumentById(documentId: DocumentId): IssuedDocument {
+    return (getDocumentById(documentId)
+        ?.takeIf { it is IssuedDocument }
+        ?.takeIf { it.format is SdJwtVcFormat }
+        ?.takeIf { !it.isKeyInvalidated } as? IssuedDocument)
+        ?.takeIf { it.findCredential() != null }
+        ?: throw IllegalArgumentException("Invalid document")
+}
+
+internal suspend fun DocumentManager.getValidLdpVcDocuments(type: String): List<IssuedDocument> {
+    return getDocuments()
+        .filter { it.format is LdpVcFormat && (it.format as LdpVcFormat).types.contains(type) }
+        .filter { !it.isKeyInvalidated }
+        .filterIsInstance<IssuedDocument>()
+        .filter { it.findCredential() != null }
+}
+
+internal suspend fun DocumentManager.getValidLdpVcDocumentById(documentId: DocumentId): IssuedDocument {
+    return (getDocumentById(documentId)
+        ?.takeIf { it is IssuedDocument }
+        ?.takeIf { it.format is LdpVcFormat }
+        ?.takeIf { !it.isKeyInvalidated } as? IssuedDocument)
+        ?.takeIf { it.findCredential() != null }
         ?: throw IllegalArgumentException("Invalid document")
 }
 

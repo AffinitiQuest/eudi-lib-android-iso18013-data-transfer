@@ -22,6 +22,11 @@ import eu.europa.ec.eudi.iso18013.transfer.internal.assertAgeOverRequestLimitFor
 import eu.europa.ec.eudi.iso18013.transfer.internal.filterWithRequestedDocuments
 import eu.europa.ec.eudi.iso18013.transfer.internal.getValidIssuedMsoMdocDocumentById
 import eu.europa.ec.eudi.iso18013.transfer.internal.getValidJwtVcJsonDocumentById
+import eu.europa.ec.eudi.iso18013.transfer.internal.getValidLdpVcDocumentById
+import eu.europa.ec.eudi.iso18013.transfer.internal.getValidSdJwtDocumentById
+import eu.europa.ec.eudi.wallet.document.format.LdpVcFormat
+import eu.europa.ec.eudi.wallet.document.generateLdpVcVp
+import java.security.MessageDigest
 import eu.europa.ec.eudi.iso18013.transfer.response.DisclosedDocuments
 import eu.europa.ec.eudi.iso18013.transfer.response.RequestProcessor
 import eu.europa.ec.eudi.iso18013.transfer.response.RequestedDocuments
@@ -29,9 +34,11 @@ import eu.europa.ec.eudi.iso18013.transfer.response.ResponseResult
 import eu.europa.ec.eudi.wallet.document.DocumentId
 import eu.europa.ec.eudi.wallet.document.DocumentManager
 import kotlinx.coroutines.runBlocking
+import org.multipaz.cbor.Bstr
 import org.multipaz.cbor.Cbor
 import org.multipaz.cbor.CborArray
 import org.multipaz.cbor.CborMap
+import org.multipaz.cbor.Tagged
 import org.multipaz.crypto.Algorithm
 import org.multipaz.mdoc.response.DeviceResponseGenerator
 import org.multipaz.util.Constants
@@ -72,7 +79,9 @@ class ProcessedDeviceRequest(
                     else it
                 }
                 .forEachIndexed { index, disclosedDocument ->
-                    if(disclosedDocument.format == "cbor") {
+                    android.util.Log.d("BLE_ITEMS", "format=${disclosedDocument.format} items=${disclosedDocument.disclosedItems}")
+                    android.util.Log.d("BLE_ITEMS", "asMap=${disclosedDocument.disclosedItems.asMap()}")
+                    if (disclosedDocument.format == "cbor") {
                         val documentResponse = runBlocking {
                             documentManager
                                 .getValidIssuedMsoMdocDocumentById(disclosedDocument.documentId)
@@ -89,21 +98,36 @@ class ProcessedDeviceRequest(
                         documentIds.add(disclosedDocument.documentId)
                     } else {
                         val documentResponse = runBlocking {
-                            documentManager
-                                .getValidJwtVcJsonDocumentById(disclosedDocument.documentId)
-                                .generateDocumentResponse(
+                            if (disclosedDocument.format == "ldp_vc") {
+                                val doc = documentManager.getValidLdpVcDocumentById(disclosedDocument.documentId)
+                                val transcriptTag24 = Cbor.encode(Tagged(24, Bstr(sessionTranscript)))
+                                val nonce = MessageDigest.getInstance("SHA-256")
+                                    .digest(transcriptTag24)
+                                    .joinToString("") { "%02x".format(it) }
+                                val docType = (doc.format as LdpVcFormat).types.last()
+                                val vpJson = doc.generateLdpVcVp(nonce, "ble", disclosedDocument.keyUnlockData)
+                                val mapBuilder = CborMap.builder()
+                                mapBuilder.put("docType", docType)
+                                mapBuilder.put("ldpVc", vpJson)
+                                Cbor.encode(mapBuilder.end().build())
+                            } else {
+                                val doc = when (disclosedDocument.format) {
+                                    "vc+sd-jwt", "dc+sd-jwt", "sd-jwt" -> documentManager.getValidSdJwtDocumentById(disclosedDocument.documentId)
+                                    "jwt_vc_json", "jwt_vc", "vc+jwt", "w3cjwt" -> documentManager.getValidJwtVcJsonDocumentById(disclosedDocument.documentId)
+                                    else -> throw IllegalArgumentException("Unsupported format: ${disclosedDocument.format}")
+                                }
+                                doc.generateDocumentResponse(
                                     transcript = sessionTranscript,
                                     elements = disclosedDocument.disclosedItems.asMap(),
                                     keyUnlockData = disclosedDocument.keyUnlockData,
-                                    //signatureAlgorithm = signatureAlgorithm ?: Algorithm.ES256
-                                )
-                                .getOrThrow()
+                                ).getOrThrow()
+                            }
                         }
-                        val w3cDocumentBuilder = CborArray.builder()
-                        w3cDocumentBuilder.add(Cbor.decode(documentResponse))
+                        val documentsArray = CborArray.builder()
+                        documentsArray.add(Cbor.decode(documentResponse))
                         val mapBuilder = CborMap.builder()
                         mapBuilder.put("version", "1.0")
-                        mapBuilder.put("w3cDocuments", w3cDocumentBuilder.end().build())
+                        mapBuilder.put("documents", documentsArray.end().build())
                         mapBuilder.put("status", Constants.DEVICE_RESPONSE_STATUS_OK)
                             .end()
 
@@ -117,9 +141,14 @@ class ProcessedDeviceRequest(
                         )
                     }
                 }
+            val responseBytes = deviceResponse.generate()
+            val hex = responseBytes.joinToString("") { "%02x".format(it) }
+            hex.chunked(800).forEachIndexed { i, chunk ->
+                android.util.Log.d("BLE_CBOR", "[$i] $chunk")
+            }
             return ResponseResult.Success(
                 DeviceResponse(
-                    deviceResponseBytes = deviceResponse.generate(),
+                    deviceResponseBytes = responseBytes,
                     sessionTranscriptBytes = sessionTranscript,
                     documentIds = documentIds
                 )
